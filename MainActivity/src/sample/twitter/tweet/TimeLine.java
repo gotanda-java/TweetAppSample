@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 
 import jp.digitalcloud.sample.twitter.auth.R;
+import twitter4j.Paging;
 import twitter4j.ResponseList;
 import twitter4j.Twitter;
 import twitter4j.TwitterException;
@@ -40,6 +41,7 @@ public class TimeLine extends ListActivity {
 	// ボタンタグ
 	final String BTN_BACK = "btn_back";
 	final String BTN_TWEET = "btn_tweet";
+	final String BTN_RELOAD = "btn_reload";
 	// 非同期タスク
 	AsyncTask<Void, Void, List<String>> task;
 
@@ -57,6 +59,9 @@ public class TimeLine extends ListActivity {
 		Button btn_tweet = (Button) findViewById(R.id.btn_tweet);
 		btn_tweet.setTag(BTN_TWEET);
 		btn_tweet.setOnClickListener(onBtnClickListener);
+		Button btn_reload = (Button) findViewById(R.id.btn_reload);
+		btn_reload.setTag(BTN_RELOAD);
+		btn_reload.setOnClickListener(onBtnClickListener);
 
 		// listadapter設定
 		adapter = new TweetAdapter(this);
@@ -73,18 +78,36 @@ public class TimeLine extends ListActivity {
 		// ネットワーク通信は非同期処理
 		task = new AsyncTask<Void, Void, List<String>>() {
 
+			@SuppressWarnings("unused")
 			@Override
 			protected List<String> doInBackground(Void... params) {
 				try {
-					// HomeTimeLine取得
-					ResponseList<twitter4j.Status> timeline = tw.getHomeTimeline();
+					// HomeTimeLineオブジェクト取得
+					ResponseList<twitter4j.Status> timeline = null;
 					ArrayList<String> list = new ArrayList<>();
+					Paging pages = null;
+
+					// 初回取得かどうか
+					if (pages == null) {
+						pages = new Paging(1, 20);
+					// 2回目以降
+					} else {
+						// 最後のつぶやき取得
+						twitter4j.Status s = timeline.get(timeline.size());
+						// Pagingオブジェクト取得
+						pages = new Paging();
+						pages.setMaxId(s.getId());
+					}
+
+					// Pagingオブジェクトで取得済みのつぶやき以降のつぶやきを取得
+					timeline = tw.getHomeTimeline(pages);
+
 					// tweet取得
 					for (twitter4j.Status status : timeline) {
 						String userName = status.getUser().getScreenName();
 						String tweet = status.getText();
 						// Date型をString型へ
-						SimpleDateFormat sdf = new SimpleDateFormat("yyyy.MM.dd HH:mm",Locale.JAPAN);
+						SimpleDateFormat sdf = new SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.JAPAN);
 						String time = sdf.format(status.getCreatedAt());
 						list.add("ユーザーID：" + userName + "\r\n" + "tweet：" + "\r\n" + tweet + "\r\n" + "time：" + time);
 					}
@@ -112,20 +135,20 @@ public class TimeLine extends ListActivity {
 	}
 
 	private class TweetAdapter extends ArrayAdapter<String> {
-		//コンストラクタ
-        public TweetAdapter(Context context) {
-            super(context, android.R.layout.simple_list_item_1);
-        }
-        
-        // listviewカスタム
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-        	TextView view = (TextView)super.getView(position, convertView,parent);
-        	view.setTextColor(Color.BLACK);
+		// コンストラクタ
+		public TweetAdapter(Context context) {
+			super(context, android.R.layout.simple_list_item_1);
+		}
+
+		// listviewカスタム
+		@Override
+		public View getView(int position, View convertView, ViewGroup parent) {
+			TextView view = (TextView) super.getView(position, convertView, parent);
+			view.setTextColor(Color.BLACK);
 			return view;
-        }
-    }
-	
+		}
+	}
+
 	private Twitter getTwitterInstance() {
 		// preferenceからAccessToken取得
 		SharedPreferences pref = getSharedPreferences(this.getString(R.string.shared_pref_name), MODE_PRIVATE);
@@ -155,14 +178,17 @@ public class TimeLine extends ListActivity {
 				finish();
 				break;
 			case BTN_TWEET:
-				Intent intent = new Intent(TimeLine.this,TweetActivity.class);
+				Intent intent = new Intent(TimeLine.this, TweetActivity.class);
 				startActivity(intent);
 				break;
+			case BTN_RELOAD:
+				showToast("タイムライン更新中");
+				reloadTimeLine();
 			}
 		}
 	};
 
-	//トースト表示メソッド
+	// トースト表示メソッド
 	private void showToast(String text) {
 		Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
 	}
