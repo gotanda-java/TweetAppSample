@@ -5,13 +5,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import com.loopj.android.image.SmartImageView;
+
 import jp.digitalcloud.sample.twitter.auth.R;
 import twitter4j.Paging;
 import twitter4j.ResponseList;
+import twitter4j.Status;
 import twitter4j.Twitter;
 import twitter4j.TwitterException;
 import twitter4j.TwitterFactory;
 import twitter4j.auth.AccessToken;
+import android.app.Activity;
 import android.app.ListActivity;
 import android.content.Context;
 import android.content.Intent;
@@ -19,11 +23,13 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -31,7 +37,7 @@ public class TimeLine extends ListActivity {
 	// twitterオブジェクト
 	Twitter tw;
 	// adapter
-	ArrayAdapter<String> adapter;
+	TweetAdapter adapter;
 	// AccessTokenオブジェクト
 	AccessToken at;
 	// AccessToken
@@ -43,7 +49,7 @@ public class TimeLine extends ListActivity {
 	final String BTN_TWEET = "btn_tweet";
 	final String BTN_RELOAD = "btn_reload";
 	// 非同期タスク
-	AsyncTask<Void, Void, List<String>> task;
+	AsyncTask<Void, Void, List<twitter4j.Status>> task;
 
 	// onCreateメソッド(画面初期表示イベント)
 	@Override
@@ -67,6 +73,11 @@ public class TimeLine extends ListActivity {
 		adapter = new TweetAdapter(this);
 		setListAdapter(adapter);
 
+		// ListView取得
+		ListView listview = getListView();
+		listview.addFooterView(getLayoutInflater().inflate(R.layout.listview_footer, null));
+		listview.setOnScrollListener(new ListOnScrollListener());
+
 		// twitterオブジェクト設定
 		tw = getTwitterInstance();
 
@@ -76,21 +87,21 @@ public class TimeLine extends ListActivity {
 
 	private void reloadTimeLine() {
 		// ネットワーク通信は非同期処理
-		task = new AsyncTask<Void, Void, List<String>>() {
+		task = new AsyncTask<Void, Void, List<twitter4j.Status>>() {
 
 			@SuppressWarnings("unused")
 			@Override
-			protected List<String> doInBackground(Void... params) {
+			protected List<twitter4j.Status> doInBackground(Void... params) {
 				try {
 					// HomeTimeLineオブジェクト取得
 					ResponseList<twitter4j.Status> timeline = null;
-					ArrayList<String> list = new ArrayList<>();
+					ArrayList<twitter4j.Status> list = new ArrayList<>();
 					Paging pages = null;
 
 					// 初回取得かどうか
 					if (pages == null) {
 						pages = new Paging(1, 20);
-					// 2回目以降
+						// 2回目以降
 					} else {
 						// 最後のつぶやき取得
 						twitter4j.Status s = timeline.get(timeline.size());
@@ -102,16 +113,7 @@ public class TimeLine extends ListActivity {
 					// Pagingオブジェクトで取得済みのつぶやき以降のつぶやきを取得
 					timeline = tw.getHomeTimeline(pages);
 
-					// tweet取得
-					for (twitter4j.Status status : timeline) {
-						String userName = status.getUser().getScreenName();
-						String tweet = status.getText();
-						// Date型をString型へ
-						SimpleDateFormat sdf = new SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.JAPAN);
-						String time = sdf.format(status.getCreatedAt());
-						list.add("ユーザーID：" + userName + "\r\n" + "tweet：" + "\r\n" + tweet + "\r\n" + "time：" + time);
-					}
-					return list;
+					return timeline;
 				} catch (TwitterException e) {
 					e.printStackTrace();
 				}
@@ -119,33 +121,63 @@ public class TimeLine extends ListActivity {
 			}
 
 			@Override
-			protected void onPostExecute(List<String> result) {
+			protected void onPostExecute(List<twitter4j.Status> result) {
 				if (result != null) {
 					adapter.clear();
-					for (String status : result) {
+					for (twitter4j.Status status : result) {
 						adapter.add(status);
 					}
 					getListView().setSelection(0);
 				} else {
-					showToast("タイムラインの取得に失敗しました。。。");
+					showToast("タイムラインの取得に失敗しました");
 				}
 			}
 		};
 		task.execute();
 	}
 
-	private class TweetAdapter extends ArrayAdapter<String> {
+	private class TweetAdapter extends ArrayAdapter<twitter4j.Status> {
+		// レイアウトインフレーター取得
+		private LayoutInflater mInflater;
+
 		// コンストラクタ
 		public TweetAdapter(Context context) {
 			super(context, android.R.layout.simple_list_item_1);
+			mInflater = (LayoutInflater) context.getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
 		}
 
 		// listviewカスタム
 		@Override
 		public View getView(int position, View convertView, ViewGroup parent) {
-			TextView view = (TextView) super.getView(position, convertView, parent);
-			view.setTextColor(Color.BLACK);
-			return view;
+			// Viewインスタンスがなければ生成
+			if (convertView == null) {
+				convertView = mInflater.inflate(R.layout.list_item_tweet, null);
+			}
+			
+			// ツイート内容取得
+			Status item = getItem(position);
+			// アイコン画像取得
+			SmartImageView icon = (SmartImageView) convertView.findViewById(R.id.icon);
+			icon.setImageUrl(item.getUser().getProfileImageURL());
+			// 名前取得
+			TextView name = (TextView) convertView.findViewById(R.id.name);
+			name.setText(item.getUser().getName());
+			name.setTextColor(Color.BLACK);
+			// スクリーンネーム取得
+			TextView screenName = (TextView) convertView.findViewById(R.id.screen_name);
+			screenName.setText("@" + item.getUser().getScreenName());
+			screenName.setTextColor(Color.BLACK);
+			//　時間取得
+			TextView time = (TextView) convertView.findViewById(R.id.time);
+			SimpleDateFormat sdf = new SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.JAPAN);
+			time.setText(sdf.format(item.getCreatedAt()));
+			time.setTextColor(Color.BLACK);
+			//　つぶやき取得
+			TextView text = (TextView) convertView.findViewById(R.id.text);
+			text.setText(item.getText());
+			text.setTextColor(Color.BLACK);
+			
+			return convertView;
 		}
 	}
 
